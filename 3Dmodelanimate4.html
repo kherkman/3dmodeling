@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<title>3D Model Editor & Animator</title>
+		<style>
+			body { margin: 0; font-family: sans-serif; background-color: #333; color: #fff; overflow: hidden; }
+			canvas { display: block; }
+            .ui-panel { position: absolute; top: 10px; left: 10px; z-index: 100; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 5px; width: 250px; }
+            .ui-panel h3 { margin-top: 0; border-bottom: 1px solid #555; padding-bottom: 5px; }
+            input[type="file"] { border: 1px solid #ccc; padding: 5px; width: calc(100% - 12px); }
+            label { display: block; margin-top: 10px; font-weight: bold; }
+
+            #scene-objects { margin-top: 10px; max-height: 150px; overflow-y: auto; }
+            .scene-object-item { padding: 8px; border: 1px solid #555; border-radius: 3px; margin-bottom: 5px; cursor: pointer; }
+            .scene-object-item.selected { background-color: #007bff; border-color: #0056b3; }
+
+            #animation-ui { top: auto; bottom: 10px; width: calc(100% - 50px); }
+            #animation-ui .controls { display: flex; align-items: center; gap: 15px; }
+            #timeline { flex-grow: 1; }
+            button { background: #007bff; color: white; border: none; padding: 8px 12px; border-radius: 3px; cursor: pointer; }
+            button:hover { background: #0056b3; }
+
+            /* Modal Styles */
+            .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 200; justify-content: center; align-items: center; }
+            .modal-overlay.visible { display: flex; }
+            .modal-content { background: #444; color: #eee; padding: 20px 30px; border-radius: 8px; width: 80%; max-width: 600px; max-height: 80vh; overflow-y: auto; position: relative; border: 1px solid #666; }
+            .modal-close { position: absolute; top: 10px; right: 15px; background: none; border: none; font-size: 28px; color: #aaa; cursor: pointer; padding: 0; }
+            .modal-close:hover { color: #fff; background: none; }
+            .modal-content h2 { margin-top: 0; color: #00aaff; border-bottom: 1px solid #666; padding-bottom: 10px; }
+            .modal-content h3 { color: #00aaff; border-bottom: 1px solid #555; padding-bottom: 5px; margin-top: 20px;}
+            .modal-content ul, .modal-content ol { padding-left: 20px; } .modal-content li { margin-bottom: 10px; }
+            .modal-content code { background-color: #222; padding: 2px 5px; border-radius: 3px; } .modal-content strong { color: #ffc107; }
+		</style>
+	</head>
+	<body>
+        <div id="loader-ui" class="ui-panel">
+            <h3>Controls <button id="info-btn" style="float: right; font-size: 12px; padding: 5px 10px;">Info</button></h3>
+            <button id="clear-scene-btn" style="width: 100%; background-color: #dc3545; margin-bottom: 10px;">Clear Scene</button>
+
+            <label for="load-model-input">Load Model(s) from Scratch:</label>
+            <input type="file" id="load-model-input" accept=".json" multiple>
+            
+            <label for="load-animation-input" style="margin-top: 15px;">Load Project File:</label>
+            <button onclick="document.getElementById('load-animation-input').click()" style="width: 100%;">Load Animation & Models</button>
+            <input type="file" id="load-animation-input" accept=".json" style="display:none;">
+
+            <div id="scene-objects-container">
+                <h3>Scene Objects</h3>
+                <div id="scene-objects"></div>
+            </div>
+        </div>
+
+        <div id="animation-ui" class="ui-panel">
+             <h3>Animation</h3>
+            <div class="controls">
+                <button id="play-pause-btn">Play</button>
+                <input type="range" id="timeline" min="0" max="10" step="0.1" value="0">
+                <span id="timeline-value">0.0s</span>
+                <button id="add-keyframe-btn">Add Keyframe</button>
+                <button id="save-animation-btn">Save Project</button>
+            </div>
+        </div>
+
+        <div id="info-modal" class="modal-overlay">
+            <div class="modal-content"><button id="modal-close-btn" class="modal-close">&times;</button><h2>How to Use</h2><h3>Workflow</h3><p>1. <strong>Load Models:</strong> Use "Load Model(s)" to build a scene.<br>2. <strong>Animate:</strong> Select objects and use the timeline to add keyframes.<br>3. <strong>Save Project:</strong> Saves everything (models and animation) into one file.<br>4. <strong>Load Project:</strong> Use "Load Animation & Models" to open a saved project file.</p><h3>Transforms</h3><ul><li>Press <strong>T</strong> for Translate (Move)</li><li>Press <strong>R</strong> for Rotate</li><li>Press <strong>S</strong> for Scale (Resize)</li></ul></div>
+        </div>
+
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
+
+		<script>
+            let scene, camera, renderer, controls, transformControls;
+            let raycaster, mouse;
+            let loadedModels = [];
+            let selectedObject = null;
+            let animationData = { duration: 10, tracks: [] };
+            let isPlaying = false;
+            let animationTime = 0;
+            let clock = new THREE.Clock();
+
+            init();
+            animate();
+
+            function init() {
+                scene = new THREE.Scene();
+                scene.background = new THREE.Color(0x333333);
+                camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                renderer = new THREE.WebGLRenderer({ antialias: true });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                document.body.appendChild(renderer.domElement);
+                controls = new THREE.OrbitControls(camera, renderer.domElement);
+                const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+                scene.add(ambientLight);
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(10, 15, 10);
+                scene.add(directionalLight);
+                camera.position.set(10, 10, 15);
+                controls.update();
+                raycaster = new THREE.Raycaster();
+                mouse = new THREE.Vector2();
+                transformControls = new THREE.TransformControls(camera, renderer.domElement);
+                transformControls.addEventListener('dragging-changed', event => { controls.enabled = !event.value; });
+                scene.add(transformControls);
+
+                document.getElementById('load-model-input').addEventListener('change', handleModelLoad);
+                document.getElementById('load-animation-input').addEventListener('change', loadAnimation);
+                document.getElementById('add-keyframe-btn').addEventListener('click', addKeyframe);
+                document.getElementById('save-animation-btn').addEventListener('click', saveAnimation);
+                document.getElementById('play-pause-btn').addEventListener('click', togglePlay);
+                document.getElementById('timeline').addEventListener('input', onTimelineScrub);
+                document.getElementById('clear-scene-btn').addEventListener('click', clearScene);
+                window.addEventListener('resize', onWindowResize, false);
+                renderer.domElement.addEventListener('click', onCanvasClick);
+                window.addEventListener('keydown', onKeydown);
+                
+                const infoBtn = document.getElementById('info-btn');
+                const modal = document.getElementById('info-modal');
+                const closeBtn = document.getElementById('modal-close-btn');
+                infoBtn.addEventListener('click', () => modal.classList.add('visible'));
+                closeBtn.addEventListener('click', () => modal.classList.remove('visible'));
+                modal.addEventListener('click', (event) => { if (event.target === modal) { modal.classList.remove('visible'); } });
+            }
+            
+            function clearScene() {
+                if (selectedObject) { transformControls.detach(); selectedObject = null; }
+                loadedModels.forEach(model => { scene.remove(model); /* Proper disposal needed for production */ });
+                loadedModels = [];
+                document.getElementById('scene-objects').innerHTML = '';
+                animationData = { duration: 10, tracks: [] };
+                animationTime = 0;
+                document.getElementById('timeline').value = 0;
+                onTimelineScrub();
+            }
+
+            function handleModelLoad(event) {
+                for(const file of event.target.files) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const sceneData = JSON.parse(e.target.result);
+                        loadModel(sceneData, file.name);
+                    };
+                    reader.readAsText(file);
+                }
+            }
+
+            function loadModel(sceneData, modelName) {
+                const modelGroup = new THREE.Group();
+                modelGroup.name = modelName;
+                modelGroup.userData.sourceData = sceneData; // Store original data for saving
+                sceneData.objects.forEach(objData => {
+                    let geometry; const dims = objData.scale;
+                    switch (objData.geometryType) {
+                        case 'BoxGeometry': geometry = new THREE.BoxGeometry(...dims); break;
+                        case 'SphereGeometry': geometry = new THREE.SphereGeometry(dims[0], 32, 32); break;
+                        case 'CylinderGeometry': geometry = new THREE.CylinderGeometry(dims[0], dims[1], dims[2], 32); break;
+                        default: geometry = new THREE.BoxGeometry(1, 1, 1);
+                    }
+                    const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(objData.material.color) });
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.position.fromArray(objData.position);
+                    mesh.rotation.fromArray(objData.rotation);
+                    modelGroup.add(mesh);
+                });
+                scene.add(modelGroup);
+                loadedModels.push(modelGroup);
+                addModelToUI(modelGroup);
+            }
+
+            function addModelToUI(modelGroup) {
+                const container = document.getElementById('scene-objects');
+                const item = document.createElement('div');
+                item.className = 'scene-object-item';
+                item.textContent = modelGroup.name;
+                item.dataset.uuid = modelGroup.uuid;
+                item.onclick = () => selectObject(modelGroup);
+                container.appendChild(item);
+            }
+            
+            function selectObject(obj) {
+                if (selectedObject) {
+                    const oldUI = document.querySelector(`.scene-object-item.selected`);
+                    if(oldUI) oldUI.classList.remove('selected');
+                }
+                selectedObject = obj;
+                transformControls.attach(obj);
+                const newUI = document.querySelector(`.scene-object-item[data-uuid="${obj.uuid}"]`);
+                if(newUI) newUI.classList.add('selected');
+            }
+
+            function onKeydown(event) {
+                if (document.getElementById('info-modal').classList.contains('visible')) {
+                    if (event.key === 'Escape') document.getElementById('info-modal').classList.remove('visible');
+                    return;
+                }
+                switch (event.key.toLowerCase()) {
+                    case 't': transformControls.setMode('translate'); break;
+                    case 'r': transformControls.setMode('rotate'); break;
+                    case 's': transformControls.setMode('scale'); break;
+                }
+            }
+
+			function animate() {
+				requestAnimationFrame(animate);
+                if (isPlaying) { updateAnimation(); }
+				controls.update();
+				renderer.render(scene, camera);
+			}
+            
+            function addKeyframe() {
+                if (!selectedObject) { alert("Please select an object first."); return; }
+                const time = parseFloat(document.getElementById('timeline').value);
+                let track = animationData.tracks.find(t => t.uuid === selectedObject.uuid);
+                if (!track) {
+                    track = { uuid: selectedObject.uuid, name: selectedObject.name, keyframes: [] };
+                    animationData.tracks.push(track);
+                }
+                track.keyframes = track.keyframes.filter(kf => kf.time !== time);
+                track.keyframes.push({ time: time, position: selectedObject.position.toArray(), rotation: selectedObject.quaternion.toArray(), scale: selectedObject.scale.toArray() });
+                track.keyframes.sort((a, b) => a.time - b.time);
+            }
+
+            function togglePlay() {
+                isPlaying = !isPlaying;
+                document.getElementById('play-pause-btn').textContent = isPlaying ? "Pause" : "Play";
+                if(isPlaying) {
+                    animationTime = parseFloat(document.getElementById('timeline').value);
+                    clock.getDelta();
+                }
+            }
+            
+            function onTimelineScrub() {
+                const time = parseFloat(document.getElementById('timeline').value);
+                document.getElementById('timeline-value').textContent = `${time.toFixed(1)}s`;
+                if (!isPlaying) {
+                    animationTime = time;
+                    applyAnimation(animationTime);
+                }
+            }
+
+            function updateAnimation() {
+                animationTime += clock.getDelta();
+                if (animationTime > animationData.duration) { animationTime = 0; }
+                document.getElementById('timeline').value = animationTime;
+                document.getElementById('timeline-value').textContent = `${animationTime.toFixed(1)}s`;
+                applyAnimation(animationTime);
+            }
+            
+            function applyAnimation(time) {
+                animationData.tracks.forEach(track => {
+                    const object = loadedModels.find(m => m.uuid === track.uuid);
+                    if (!object || track.keyframes.length < 2) return;
+                    let kf1 = track.keyframes.find(kf => kf.time >= time) || track.keyframes[track.keyframes.length - 1];
+                    let kf0 = track.keyframes.slice().reverse().find(kf => kf.time <= time) || track.keyframes[0];
+                    if (kf0 === kf1) {
+                        object.position.fromArray(kf0.position); object.quaternion.fromArray(kf0.rotation); object.scale.fromArray(kf0.scale);
+                    } else {
+                        const alpha = (time - kf0.time) / (kf1.time - kf0.time);
+                        object.position.fromArray(kf0.position).lerp(new THREE.Vector3().fromArray(kf1.position), alpha);
+                        object.scale.fromArray(kf0.scale).lerp(new THREE.Vector3().fromArray(kf1.scale), alpha);
+                        const q0 = new THREE.Quaternion().fromArray(kf0.rotation); const q1 = new THREE.Quaternion().fromArray(kf1.rotation);
+                        THREE.Quaternion.slerp(q0, q1, object.quaternion, alpha);
+                    }
+                });
+            }
+
+            function saveAnimation() {
+                if (animationData.tracks.length === 0) { alert("Nothing to save. Add keyframes first."); return; }
+                const animatedModelUUIDs = new Set(animationData.tracks.map(t => t.uuid));
+                const modelsToSave = loadedModels.filter(model => animatedModelUUIDs.has(model.uuid)).map(model => ({ name: model.name, data: model.userData.sourceData }));
+                const dataToSave = { duration: animationData.duration, tracks: animationData.tracks, models: modelsToSave };
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dataToSave, null, 2));
+                const dl = document.createElement('a');
+                dl.setAttribute("href", dataStr); dl.setAttribute("download", "project.json");
+                document.body.appendChild(dl); dl.click(); dl.remove();
+            }
+
+            function loadAnimation(event) {
+                const file = event.target.files[0]; if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        if (!data.models || !data.tracks) { throw new Error("Invalid project file."); }
+                        clearScene();
+                        data.models.forEach(modelInfo => loadModel(modelInfo.data, modelInfo.name));
+                        const nameToNewUUIDMap = new Map();
+                        loadedModels.forEach(model => nameToNewUUIDMap.set(model.name, model.uuid));
+                        const remappedTracks = data.tracks.map(track => { const newUUID = nameToNewUUIDMap.get(track.name); return newUUID ? { ...track, uuid: newUUID } : null; }).filter(Boolean);
+                        animationData = { duration: data.duration, tracks: remappedTracks };
+                        document.getElementById('timeline').max = data.duration;
+                        animationTime = 0; document.getElementById('timeline').value = 0;
+                        onTimelineScrub();
+                    } catch (error) { alert(`Failed to load project: ${error.message}`); console.error(error); }
+                };
+                reader.readAsText(file);
+            }
+            
+            // Utility Functions
+            function onCanvasClick(event) { mouse.x = (event.clientX / window.innerWidth) * 2 - 1; mouse.y = - (event.clientY / window.innerHeight) * 2 + 1; raycaster.setFromCamera(mouse, camera); const intersects = raycaster.intersectObjects(loadedModels, true); if (intersects.length > 0) { let object = intersects[0].object; while(object.parent && !loadedModels.includes(object)) { object = object.parent; } if (loadedModels.includes(object)) { selectObject(object); } } }
+            function onWindowResize() { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }
+		</script>
+	</body>
+</html>
