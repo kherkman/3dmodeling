@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<title>3D Model Viewer</title>
+		<style>
+			body { margin: 0; font-family: sans-serif; }
+			canvas { display: block; }
+            #loader-ui { position: absolute; top: 10px; left: 10px; z-index: 100; background: #fff; padding: 10px; border-radius: 5px;}
+            input[type="file"] { border: 1px solid #ccc; padding: 5px; }
+		</style>
+	</head>
+	<body>
+        <div id="loader-ui">
+            <label for="load-model-input">Load Model:</label>
+            <input type="file" id="load-model-input" accept=".json">
+        </div>
+
+		<!-- Import three.js libraries -->
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+		<script>
+            // 1. Basic Scene Setup
+			const scene = new THREE.Scene();
+			scene.background = new THREE.Color(0x333333);
+			const camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
+			const renderer = new THREE.WebGLRenderer({ antialias: true });
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			document.body.appendChild( renderer.domElement );
+			const controls = new THREE.OrbitControls( camera, renderer.domElement );
+            const ambientLight = new THREE.AmbientLight( 0xffffff, 0.6 );
+			scene.add( ambientLight );
+			const directionalLight = new THREE.DirectionalLight( 0xffffff, 0.8 );
+			directionalLight.position.set( 10, 15, 10 );
+			scene.add( directionalLight );
+            camera.position.set(10, 10, 15);
+            controls.update();
+
+            let currentObjects = [];
+
+            // 2. File Loading Logic
+            document.getElementById('load-model-input').addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const sceneData = JSON.parse(e.target.result);
+                    loadModel(sceneData);
+                };
+                reader.readAsText(file);
+            });
+
+            // 3. Model Loading Function
+            function loadModel(sceneData) {
+                // Clear any existing objects from the scene
+                currentObjects.forEach(obj => scene.remove(obj));
+                currentObjects = [];
+
+                sceneData.objects.forEach(objData => {
+                    let geometry;
+                    const dims = objData.scale; // These are the final dimensions
+
+                    switch (objData.geometryType) {
+                        case 'BoxGeometry':
+                            geometry = new THREE.BoxGeometry(...dims);
+                            break;
+                        case 'SphereGeometry':
+                            if (objData.name === "Hemisphere") {
+                                geometry = new THREE.SphereGeometry(dims[0], 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+                            } else {
+                                geometry = new THREE.SphereGeometry(dims[0], 32, 32);
+                            }
+                            break;
+                        case 'CylinderGeometry':
+                            geometry = new THREE.CylinderGeometry(dims[0], dims[1], dims[2], 32);
+                            break;
+                        case 'ConeGeometry':
+                            geometry = new THREE.ConeGeometry(dims[0], dims[1], 32);
+                            break;
+                        case 'PlaneGeometry':
+                            geometry = new THREE.PlaneGeometry(dims[0], dims[1]);
+                            break;
+                        case 'TetrahedronGeometry':
+                            geometry = new THREE.TetrahedronGeometry(dims[0]);
+                            break;
+                        default:
+                            console.warn("Unknown geometry type:", objData.geometryType);
+                            geometry = new THREE.BoxGeometry(1, 1, 1);
+                    }
+
+                    const material = new THREE.MeshStandardMaterial({
+                        color: objData.color,
+                        side: objData.geometryType === 'PlaneGeometry' ? THREE.DoubleSide : THREE.FrontSide
+                    });
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.position.fromArray(objData.position);
+                    mesh.rotation.fromArray(objData.rotation);
+                    
+                    // NOTE: We DO NOT apply scale here because the dimensions are already in the geometry
+                    
+                    scene.add(mesh);
+                    currentObjects.push(mesh);
+                });
+
+                // Update camera to match saved position and look at the scene's center
+                camera.position.fromArray(sceneData.camera.position);
+                controls.target.set(0, 0, 0);
+                controls.update();
+            }
+
+			// 4. Render Loop
+			function animate() {
+				requestAnimationFrame( animate );
+				controls.update();
+				renderer.render( scene, camera );
+			}
+			animate();
+
+            // Handle window resizing
+			window.addEventListener('resize', () => {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize(window.innerWidth, window.innerHeight);
+			}, false);
+		</script>
+	</body>
+</html>
