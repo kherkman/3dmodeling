@@ -6,13 +6,14 @@
 		<style>
 			body { margin: 0; font-family: sans-serif; }
 			canvas { display: block; }
-            #loader-ui { position: absolute; top: 10px; left: 10px; z-index: 100; background: #fff; padding: 10px; border-radius: 5px;}
+            #loader-ui { position: absolute; top: 10px; left: 10px; z-index: 100; background: rgba(255,255,255,0.8); padding: 10px; border-radius: 5px; }
             input[type="file"] { border: 1px solid #ccc; padding: 5px; }
 		</style>
 	</head>
 	<body>
         <div id="loader-ui">
-            <label for="load-model-input">Load Model:</label>
+            <label for="load-model-input">Load Model File (model.json):</label>
+            <br>
             <input type="file" id="load-model-input" accept=".json">
         </div>
 
@@ -29,15 +30,15 @@
 			renderer.setSize( window.innerWidth, window.innerHeight );
 			document.body.appendChild( renderer.domElement );
 			const controls = new THREE.OrbitControls( camera, renderer.domElement );
-            const ambientLight = new THREE.AmbientLight( 0xffffff, 0.6 );
+            
+            const ambientLight = new THREE.AmbientLight( 0xffffff, 0.2 );
 			scene.add( ambientLight );
-			const directionalLight = new THREE.DirectionalLight( 0xffffff, 0.8 );
-			directionalLight.position.set( 10, 15, 10 );
-			scene.add( directionalLight );
+            
             camera.position.set(10, 10, 15);
             controls.update();
 
             let currentObjects = [];
+            let currentLights = [];
 
             // 2. File Loading Logic
             document.getElementById('load-model-input').addEventListener('change', (event) => {
@@ -46,66 +47,73 @@
 
                 const reader = new FileReader();
                 reader.onload = (e) => {
-                    const sceneData = JSON.parse(e.target.result);
-                    loadModel(sceneData);
+                    try {
+                        const sceneData = JSON.parse(e.target.result);
+                        loadModel(sceneData);
+                    } catch (error) {
+                        alert("Error parsing JSON file. Please make sure it's a valid model file.");
+                        console.error(error);
+                    }
                 };
                 reader.readAsText(file);
+                event.target.value = '';
             });
 
             // 3. Model Loading Function
             function loadModel(sceneData) {
-                // Clear any existing objects from the scene
                 currentObjects.forEach(obj => scene.remove(obj));
                 currentObjects = [];
+                currentLights.forEach(light => scene.remove(light));
+                currentLights = [];
 
-                sceneData.objects.forEach(objData => {
-                    let geometry;
-                    const dims = objData.scale; // These are the final dimensions
-
-                    switch (objData.geometryType) {
-                        case 'BoxGeometry':
-                            geometry = new THREE.BoxGeometry(...dims);
-                            break;
-                        case 'SphereGeometry':
-                            if (objData.name === "Hemisphere") {
-                                geometry = new THREE.SphereGeometry(dims[0], 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
-                            } else {
-                                geometry = new THREE.SphereGeometry(dims[0], 32, 32);
-                            }
-                            break;
-                        case 'CylinderGeometry':
-                            geometry = new THREE.CylinderGeometry(dims[0], dims[1], dims[2], 32);
-                            break;
-                        case 'ConeGeometry':
-                            geometry = new THREE.ConeGeometry(dims[0], dims[1], 32);
-                            break;
-                        case 'PlaneGeometry':
-                            geometry = new THREE.PlaneGeometry(dims[0], dims[1]);
-                            break;
-                        case 'TetrahedronGeometry':
-                            geometry = new THREE.TetrahedronGeometry(dims[0]);
-                            break;
-                        default:
-                            console.warn("Unknown geometry type:", objData.geometryType);
-                            geometry = new THREE.BoxGeometry(1, 1, 1);
-                    }
-
-                    const material = new THREE.MeshStandardMaterial({
-                        color: objData.color,
-                        side: objData.geometryType === 'PlaneGeometry' ? THREE.DoubleSide : THREE.FrontSide
+                if (sceneData.lights) {
+                    sceneData.lights.forEach(lightData => {
+                        let light;
+                        switch (lightData.type) {
+                            case 'DirectionalLight': light = new THREE.DirectionalLight(); break;
+                            case 'PointLight': light = new THREE.PointLight(); break;
+                            case 'SpotLight': light = new THREE.SpotLight(); break;
+                            default: return;
+                        }
+                        light.position.fromArray(lightData.position);
+                        light.color.set(lightData.color);
+                        light.intensity = lightData.intensity;
+                        scene.add(light);
+                        currentLights.push(light);
                     });
-                    const mesh = new THREE.Mesh(geometry, material);
-                    mesh.position.fromArray(objData.position);
-                    mesh.rotation.fromArray(objData.rotation);
-                    
-                    // NOTE: We DO NOT apply scale here because the dimensions are already in the geometry
-                    
-                    scene.add(mesh);
-                    currentObjects.push(mesh);
-                });
+                }
 
-                // Update camera to match saved position and look at the scene's center
-                camera.position.fromArray(sceneData.camera.position);
+                if (sceneData.objects) {
+                    sceneData.objects.forEach(objData => {
+                        let geometry;
+                        const dims = objData.scale;
+
+                        switch (objData.geometryType) {
+                            case 'BoxGeometry': geometry = new THREE.BoxGeometry(...dims); break;
+                            case 'SphereGeometry': geometry = (objData.name === "Hemisphere") ? new THREE.SphereGeometry(dims[0], 32, 16, 0, Math.PI * 2, 0, Math.PI / 2) : new THREE.SphereGeometry(dims[0], 32, 32); break;
+                            case 'CylinderGeometry': geometry = new THREE.CylinderGeometry(dims[0], dims[1], dims[2], 32); break;
+                            case 'ConeGeometry': geometry = new THREE.ConeGeometry(dims[0], dims[1], 32); break;
+                            case 'PlaneGeometry': geometry = new THREE.PlaneGeometry(dims[0], dims[1]); break;
+                            case 'TetrahedronGeometry': geometry = new THREE.TetrahedronGeometry(dims[0]); break;
+                            default: geometry = new THREE.BoxGeometry(1, 1, 1);
+                        }
+
+                        const material = new THREE.MeshPhysicalMaterial(objData.material);
+                        material.color.set(objData.material.color);
+                        material.emissive.set(objData.material.emissive);
+
+                        const mesh = new THREE.Mesh(geometry, material);
+                        mesh.position.fromArray(objData.position);
+                        mesh.rotation.fromArray(objData.rotation);
+                        
+                        scene.add(mesh);
+                        currentObjects.push(mesh);
+                    });
+                }
+
+                if (sceneData.camera) {
+                    camera.position.fromArray(sceneData.camera.position);
+                }
                 controls.target.set(0, 0, 0);
                 controls.update();
             }
