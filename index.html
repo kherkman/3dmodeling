@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>Three.js Editor with Lighting and Objects</title>
+    <title>Three.js Full Editor</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
     <style>
@@ -132,35 +132,18 @@
         
         function selectItem(item) {
             selectedItem = item;
-            if (item) {
-                transformControls.attach(item);
-            } else {
-                transformControls.detach();
-            }
+            transformControls.attach(item);
             updateObjectList();
             updateLightList();
             updatePropertiesPanel();
         }
         
-        function addDirectionalLight() {
-            const light = new THREE.DirectionalLight(0xffffff, 1.5);
-            light.position.set(5, 10, 7.5);
-            light.name = "DirectionalLight";
-            addLightToScene(light);
-        }
-        function addPointLight() {
-            const light = new THREE.PointLight(0xffffff, 20, 50);
-            light.position.set(0, 5, 5);
-            light.name = "PointLight";
-            addLightToScene(light);
-        }
-        function addSpotLight() {
-            const light = new THREE.SpotLight(0xffffff, 50, 100, Math.PI / 6, 0.2);
-            light.position.set(0, 15, 0);
-            light.name = "SpotLight";
-            addLightToScene(light);
-        }
-        function addLightToScene(light) {
+        function addDirectionalLight() { addLightToScene(new THREE.DirectionalLight(0xffffff, 1.5), "DirectionalLight"); }
+        function addPointLight() { addLightToScene(new THREE.PointLight(0xffffff, 20, 50), "PointLight"); }
+        function addSpotLight() { addLightToScene(new THREE.SpotLight(0xffffff, 50, 100, Math.PI / 6, 0.2), "SpotLight"); }
+        function addLightToScene(light, name) {
+            light.name = name;
+            light.position.set(5, 10, 5);
             scene.add(light);
             if (light.target) scene.add(light.target);
             let helper;
@@ -177,8 +160,7 @@
                 scene.remove(selectedItem);
                 if (selectedItem.target) scene.remove(selectedItem.target);
                 if (selectedItem.helper) scene.remove(selectedItem.helper);
-                const index = lights.indexOf(selectedItem);
-                if (index > -1) lights.splice(index, 1);
+                lights.splice(lights.indexOf(selectedItem), 1);
                 selectItem(null);
             }
         }
@@ -201,7 +183,7 @@
             objects.forEach((obj, index) => { const option = document.createElement('option'); option.value = index; option.textContent = `${obj.name} ${index + 1}`; if (obj === selectedItem) option.selected = true; objectList.appendChild(option); });
         }
         function removeSelectedObject() {
-            if (selectedItem && selectedItem.isMesh) { scene.remove(selectedItem); const index = objects.indexOf(selectedItem); if (index > -1) objects.splice(index, 1); selectItem(null); }
+            if (selectedItem && selectedItem.isMesh) { scene.remove(selectedItem); objects.splice(objects.indexOf(selectedItem), 1); selectItem(null); }
         }
 
         function updatePropertiesPanel() {
@@ -217,49 +199,30 @@
             } else if (selectedItem.isMesh) {
                 propertiesTitle.textContent = 'Object Properties';
                 const mat = selectedItem.material;
-
-                // --- Transformations Folder with Lock Button ---
                 const transFolder = createFolder('Transformations', propsContainer);
                 let baseScaleForLock = null;
                 const lockButton = document.createElement('button');
                 lockButton.textContent = 'Lock Aspect Ratio';
                 lockButton.onclick = () => {
                     lockButton.classList.toggle('locked');
-                    if (lockButton.classList.contains('locked')) {
-                        baseScaleForLock = selectedItem.scale.clone();
-                        lockButton.textContent = 'Unlock Aspect Ratio';
-                    } else {
-                        baseScaleForLock = null;
-                        lockButton.textContent = 'Lock Aspect Ratio';
-                    }
+                    if (lockButton.classList.contains('locked')) { baseScaleForLock = selectedItem.scale.clone(); lockButton.textContent = 'Unlock Aspect Ratio';
+                    } else { baseScaleForLock = null; lockButton.textContent = 'Lock Aspect Ratio'; }
                 };
                 transFolder.appendChild(lockButton);
-
                 const scaleInputs = {};
                 ['x', 'y', 'z'].forEach(dim => {
-                    const item = document.createElement('div'); item.className = 'prop-item';
-                    const label = document.createElement('label'); label.textContent = `Scale ${dim.toUpperCase()}`;
+                    const item = document.createElement('div'); item.className = 'prop-item'; const label = document.createElement('label'); label.textContent = `Scale ${dim.toUpperCase()}`;
                     const input = document.createElement('input'); input.type = 'number'; input.step = 0.1; input.value = selectedItem.scale[dim].toFixed(2);
                     input.oninput = () => {
                         const newValue = parseFloat(input.value) || 0;
                         if (lockButton.classList.contains('locked') && baseScaleForLock) {
-                            const baseDimValue = baseScaleForLock[dim];
-                            const factor = (baseDimValue !== 0) ? newValue / baseDimValue : 0;
-                            if(factor !== 0) {
-                                selectedItem.scale.copy(baseScaleForLock).multiplyScalar(factor);
-                            }
-                            ['x', 'y', 'z'].forEach(d => {
-                                if (d !== dim) { scaleInputs[d].value = selectedItem.scale[d].toFixed(2); }
-                            });
-                        } else {
-                           selectedItem.scale[dim] = newValue;
-                        }
+                            const baseDimValue = baseScaleForLock[dim]; const factor = (baseDimValue !== 0) ? newValue / baseDimValue : 0;
+                            if(factor !== 0) { selectedItem.scale.copy(baseScaleForLock).multiplyScalar(factor); }
+                            ['x', 'y', 'z'].forEach(d => { if (d !== dim) { scaleInputs[d].value = selectedItem.scale[d].toFixed(2); } });
+                        } else { selectedItem.scale[dim] = newValue; }
                     };
-                    item.appendChild(label); item.appendChild(input); transFolder.appendChild(item);
-                    scaleInputs[dim] = input;
+                    item.appendChild(label); item.appendChild(input); transFolder.appendChild(item); scaleInputs[dim] = input;
                 });
-
-                // --- Material Properties ---
                 const coreFolder = createFolder('Core Material', propsContainer);
                 coreFolder.appendChild(createColorPicker('Color', mat.color, (val) => mat.color.set(val)));
                 coreFolder.appendChild(createSlider('Roughness', 0, 1, 0.01, mat.roughness, (val) => mat.roughness = val));
@@ -289,8 +252,16 @@
         function createColorPicker(label, value, callback) { const container = document.createElement('div'); container.className = 'prop-item'; const labelEl = document.createElement('label'); labelEl.textContent = label; const picker = document.createElement('input'); picker.type = 'color'; picker.value = '#' + value.getHexString(); picker.oninput = () => callback(picker.value); container.appendChild(labelEl); container.appendChild(picker); return container; }
         function createCheckbox(label, checked, callback) { const container = document.createElement('div'); container.className = 'prop-item'; const labelEl = document.createElement('label'); labelEl.textContent = label; const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = checked; checkbox.onchange = () => callback(checkbox.checked); container.appendChild(labelEl); container.appendChild(checkbox); return container; }
         
-        function getLightData(light) { return { type: light.constructor.name, position: light.position.toArray(), color: '#' + light.color.getHexString(), intensity: light.intensity }; }
-        function getMaterialData(material) { return { color: '#' + material.color.getHexString(), metalness: material.metalness, roughness: material.roughness, transparent: material.transparent, opacity: material.opacity, transmission: material.transmission, ior: material.ior, clearcoat: material.clearcoat, clearcoatRoughness: material.clearcoatRoughness, sheen: material.sheen, reflectivity: material.reflectivity, emissive: '#' + material.emissive.getHexString(), emissiveIntensity: material.emissiveIntensity, wireframe: material.wireframe, side: material.side }; }
+        // ** SAVING: This function gathers ALL material properties for saving **
+        function getMaterialData(material) { 
+            return {
+                color: '#' + material.color.getHexString(), metalness: material.metalness, roughness: material.roughness, transparent: material.transparent, opacity: material.opacity,
+                transmission: material.transmission, ior: material.ior, clearcoat: material.clearcoat, clearcoatRoughness: material.clearcoatRoughness, sheen: material.sheen,
+                reflectivity: material.reflectivity, emissive: '#' + material.emissive.getHexString(), emissiveIntensity: material.emissiveIntensity,
+                wireframe: material.wireframe, side: material.side
+             };
+        }
+        function getLightData(light) { return { type: light.constructor.name, name: light.name, position: light.position.toArray(), color: '#' + light.color.getHexString(), intensity: light.intensity }; }
         function downloadJSON(data, filename) { const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url); }
 
         function saveScene() {
@@ -302,8 +273,7 @@
         function saveModelForViewer() {
             const sceneData = { objects: [], lights: [], camera: { position: camera.position.toArray(), rotation: camera.rotation.toArray() } };
             objects.forEach(obj => {
-                const params = obj.geometry.parameters;
-                let finalDimensions;
+                const params = obj.geometry.parameters; let finalDimensions;
                 switch (obj.geometry.type) {
                     case 'BoxGeometry': finalDimensions = [params.width * obj.scale.x, params.height * obj.scale.y, params.depth * obj.scale.z]; break;
                     case 'SphereGeometry': finalDimensions = [params.radius * obj.scale.x]; break;
@@ -319,6 +289,7 @@
             downloadJSON(sceneData, 'model.json');
         }
 
+        // ** LOADING: This function applies all saved properties **
         function loadScene(data) {
             while (objects.length > 0) { selectItem(objects[0]); removeSelectedObject(); }
             while (lights.length > 0) { selectItem(lights[0]); removeSelectedLight(); }
@@ -338,31 +309,32 @@
                     light.position.fromArray(lightData.position);
                     light.color.set(lightData.color);
                     light.intensity = lightData.intensity;
-                    light.name = lightData.type;
-                    addLightToScene(light);
+                    addLightToScene(light, lightData.name || lightData.type);
                 });
             }
-            sceneData.objects.forEach(objData => {
-                let geometry;
-                switch (objData.geometryType) {
-                    case 'BoxGeometry': geometry = new THREE.BoxGeometry(4, 4, 4); break;
-                    case 'SphereGeometry': geometry = (objData.name === "Hemisphere") ? new THREE.SphereGeometry(2, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2) : new THREE.SphereGeometry(2, 32, 32); break;
-                    case 'CylinderGeometry': geometry = new THREE.CylinderGeometry(2, 2, 4, 32); break;
-                    case 'ConeGeometry': geometry = new THREE.ConeGeometry(2, 4, 32); break;
-                    case 'PlaneGeometry': geometry = new THREE.PlaneGeometry(5, 5); break;
-                    case 'TetrahedronGeometry': geometry = new THREE.TetrahedronGeometry(3); break;
-                    default: geometry = new THREE.BoxGeometry(4, 4, 4);
-                }
-                const material = new THREE.MeshPhysicalMaterial(objData.material);
-                material.color.set(objData.material.color);
-                material.emissive.set(objData.material.emissive);
-                const mesh = new THREE.Mesh(geometry, material);
-                mesh.name = objData.name;
-                mesh.position.fromArray(objData.position);
-                mesh.rotation.fromArray(objData.rotation);
-                mesh.scale.fromArray(objData.scale);
-                addObjectToScene(mesh, objData.name);
-            });
+            if(sceneData.objects) {
+                sceneData.objects.forEach(objData => {
+                    let geometry;
+                    switch (objData.geometryType) {
+                        case 'BoxGeometry': geometry = new THREE.BoxGeometry(4, 4, 4); break;
+                        case 'SphereGeometry': geometry = (objData.name === "Hemisphere") ? new THREE.SphereGeometry(2, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2) : new THREE.SphereGeometry(2, 32, 32); break;
+                        case 'CylinderGeometry': geometry = new THREE.CylinderGeometry(2, 2, 4, 32); break;
+                        case 'ConeGeometry': geometry = new THREE.ConeGeometry(2, 4, 32); break;
+                        case 'PlaneGeometry': geometry = new THREE.PlaneGeometry(5, 5); break;
+                        case 'TetrahedronGeometry': geometry = new THREE.TetrahedronGeometry(3); break;
+                        default: geometry = new THREE.BoxGeometry(4, 4, 4);
+                    }
+                    // ** Create material from the full saved data object **
+                    const material = new THREE.MeshPhysicalMaterial(objData.material);
+                    material.color.set(objData.material.color); // Explicitly set colors
+                    material.emissive.set(objData.material.emissive);
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.position.fromArray(objData.position);
+                    mesh.rotation.fromArray(objData.rotation);
+                    mesh.scale.fromArray(objData.scale);
+                    addObjectToScene(mesh, objData.name);
+                });
+            }
             selectItem(null);
         }
 
@@ -373,7 +345,6 @@
             document.getElementById('add-spot-light-btn').addEventListener('click', addSpotLight);
             document.getElementById('remove-light-btn').addEventListener('click', removeSelectedLight);
             lightList.addEventListener('change', (event) => { selectItem(lights[event.target.value]); });
-            
             document.getElementById('add-cube-btn').addEventListener('click', addCube);
             document.getElementById('add-sphere-btn').addEventListener('click', () => addObjectToScene(new THREE.Mesh(new THREE.SphereGeometry(2, 32, 32), createDefaultMaterial(0xff0000)), "Sphere"));
             document.getElementById('add-cylinder-btn').addEventListener('click', () => addObjectToScene(new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 4, 32), createDefaultMaterial(0xffff00)), "Cylinder"));
@@ -381,10 +352,8 @@
             document.getElementById('add-plane-btn').addEventListener('click', () => addObjectToScene(new THREE.Mesh(new THREE.PlaneGeometry(5, 5), createDefaultMaterial(0xffffff)), "Plane"));
             document.getElementById('add-hemisphere-btn').addEventListener('click', () => addObjectToScene(new THREE.Mesh(new THREE.SphereGeometry(2, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), createDefaultMaterial(0xff00ff)), "Hemisphere"));
             document.getElementById('add-tetrahedron-btn').addEventListener('click', () => addObjectToScene(new THREE.Mesh(new THREE.TetrahedronGeometry(3), createDefaultMaterial(0x00ffff)), "Tetrahedron"));
-            
             document.getElementById('remove-btn').addEventListener('click', removeSelectedObject);
             objectList.addEventListener('change', (event) => { selectItem(objects[event.target.value]); });
-
             document.getElementById('translate-btn').addEventListener('click', () => transformControls.setMode('translate'));
             document.getElementById('rotate-btn').addEventListener('click', () => transformControls.setMode('rotate'));
             document.getElementById('save-btn').addEventListener('click', saveScene);
@@ -394,6 +363,7 @@
             loadInput.addEventListener('change', (event) => {
                 const file = event.target.files[0];
                 if (file) { const reader = new FileReader(); reader.onload = (e) => { loadScene(e.target.result); }; reader.readAsText(file); }
+                event.target.value = ''; // Reset file input
             });
         }
 
@@ -413,7 +383,10 @@
                     const lightIntersects = raycaster.intersectObjects(lightHelpers, false);
                     if (lightIntersects.length > 0) {
                        const clickedLight = lights.find(l => l.helper === lightIntersects[0].object);
-                       if (clickedLight) { selectItem(clickedLight); }
+                       if (clickedLight && clickedLight !== selectedItem) { selectItem(clickedLight); }
+                    } else if (intersects.length === 0 && !transformControls.dragging) {
+                        // Deselect if clicking on empty space
+                        selectItem(null);
                     }
                 }
             });
