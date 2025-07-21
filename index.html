@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Application Suite</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            padding: 40px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+
+        .container {
+            max-width: 960px;
+            width: 100%;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            color: #1c1e21;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 1.25rem;
+            color: #606770;
+            margin-bottom: 40px;
+        }
+
+        .app-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+            justify-content: center;
+        }
+
+        .app-card {
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            text-decoration: none;
+            color: inherit;
+            overflow: hidden;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .app-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+        }
+
+        .card-content {
+            padding: 25px;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            text-align: left;
+        }
+
+        .card-content h2 {
+            font-size: 1.5rem;
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #0d6efd;
+        }
+
+        .card-content p {
+            font-size: 1rem;
+            line-height: 1.5;
+            color: #495057;
+            flex-grow: 1;
+            margin-bottom: 20px;
+        }
+
+        .card-footer {
+            padding: 20px 25px;
+            background-color: #f8f9fa;
+            border-top: 1px solid #dee2e6;
+        }
+
+        .launch-button {
+            display: inline-block;
+            background-color: #0d6efd;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: background-color 0.2s ease;
+            width: 100%;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        .launch-button:hover {
+            background-color: #0b5ed7;
+        }
+
+        footer {
+            margin-top: 50px;
+            color: #8a8d91;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>3D Application Suite</h1>
+            <p>Your portal for creating, viewing, and animating 3D models.</p>
+        </header>
+
+        <main class="app-grid">
+            <a href="3Dmodeling10.html" class="app-card">
+                <div class="card-content">
+                    <h2>Model Editor</h2>
+                    <p>A comprehensive editor to build and customize 3D scenes. Add primitive shapes, adjust physical material properties like color and metalness, and set up lighting.</p>
+                </div>
+                <div class="card-footer">
+                    <span class="launch-button">Launch Editor</span>
+                </div>
+            </a>
+
+            <a href="3Dmodelanimate4.html" class="app-card">
+                <div class="card-content">
+                    <h2>Animator</h2>
+                    <p>Bring your models to life. Load models created in the editor, define keyframes on a timeline for position, rotation, and scale, and save the complete animation project.</p>
+                </div>
+                 <div class="card-footer">
+                    <span class="launch-button">Launch Animator</span>
+                </div>
+            </a>
+
+            <a href="3Dmodelview2.html" class="app-card">
+                <div class="card-content">
+                    <h2>Model Viewer</h2>
+                    <p>A lightweight, clean viewer to load and inspect final 3D models. Ideal for showcasing your creations without the complexity of the full editor interface.</p>
+                </div>
+                 <div class="card-footer">
+                    <span class="launch-button">Launch Viewer</span>
+                </div>
+            </a>
+        </main>
+        
+        <footer>
+            <p>&copy; 2025 3D Application Suite. All files are locally hosted.</p>
+        </footer>
+    </div>
+
+</body>
+</html>
