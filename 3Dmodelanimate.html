@@ -158,6 +158,12 @@
                         default: geometry = new THREE.BoxGeometry(1, 1, 1);
                     }
                     const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(objData.material.color) });
+                    if (objData.material.textureDataURL) {
+                        const texture = new THREE.TextureLoader().load(objData.material.textureDataURL);
+                        material.map = texture;
+                        material.needsUpdate = true;
+                    }
+
                     const mesh = new THREE.Mesh(geometry, material);
                     mesh.position.fromArray(objData.position);
                     mesh.rotation.fromArray(objData.rotation);
