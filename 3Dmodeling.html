@@ -59,6 +59,8 @@
             <div class="control-section">
                 <h3>Scene Contents</h3>
                 <select id="object-list" size="8"></select>
+                <input type="file" id="texture-input" accept=".jpg, .jpeg" style="display: none;">
+                <button id="apply-texture-btn">Apply Texture</button>
                 <button id="remove-btn">Remove Selected Object</button>
             </div>
 
@@ -97,6 +99,7 @@
         const propertiesPanelContainer = document.getElementById('properties-panel-container');
         const propsContainer = document.getElementById('props-container');
         const propertiesTitle = document.getElementById('properties-title');
+        const textureInput = document.getElementById('texture-input');
 
         init();
         animate();
@@ -252,15 +255,19 @@
         function createColorPicker(label, value, callback) { const container = document.createElement('div'); container.className = 'prop-item'; const labelEl = document.createElement('label'); labelEl.textContent = label; const picker = document.createElement('input'); picker.type = 'color'; picker.value = '#' + value.getHexString(); picker.oninput = () => callback(picker.value); container.appendChild(labelEl); container.appendChild(picker); return container; }
         function createCheckbox(label, checked, callback) { const container = document.createElement('div'); container.className = 'prop-item'; const labelEl = document.createElement('label'); labelEl.textContent = label; const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = checked; checkbox.onchange = () => callback(checkbox.checked); container.appendChild(labelEl); container.appendChild(checkbox); return container; }
         
-        // ** SAVING: This function gathers ALL material properties for saving **
         function getMaterialData(material) { 
-            return {
+            const data = {
                 color: '#' + material.color.getHexString(), metalness: material.metalness, roughness: material.roughness, transparent: material.transparent, opacity: material.opacity,
                 transmission: material.transmission, ior: material.ior, clearcoat: material.clearcoat, clearcoatRoughness: material.clearcoatRoughness, sheen: material.sheen,
                 reflectivity: material.reflectivity, emissive: '#' + material.emissive.getHexString(), emissiveIntensity: material.emissiveIntensity,
                 wireframe: material.wireframe, side: material.side
              };
+             if (material.map && material.map.image) {
+                data.textureDataURL = material.map.image.src;
+            }
+            return data;
         }
+
         function getLightData(light) { return { type: light.constructor.name, name: light.name, position: light.position.toArray(), color: '#' + light.color.getHexString(), intensity: light.intensity }; }
         function downloadJSON(data, filename) { const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url); }
 
@@ -289,7 +296,6 @@
             downloadJSON(sceneData, 'model.json');
         }
 
-        // ** LOADING: This function applies all saved properties **
         function loadScene(data) {
             while (objects.length > 0) { selectItem(objects[0]); removeSelectedObject(); }
             while (lights.length > 0) { selectItem(lights[0]); removeSelectedLight(); }
@@ -324,10 +330,15 @@
                         case 'TetrahedronGeometry': geometry = new THREE.TetrahedronGeometry(3); break;
                         default: geometry = new THREE.BoxGeometry(4, 4, 4);
                     }
-                    // ** Create material from the full saved data object **
                     const material = new THREE.MeshPhysicalMaterial(objData.material);
-                    material.color.set(objData.material.color); // Explicitly set colors
+                    material.color.set(objData.material.color); 
                     material.emissive.set(objData.material.emissive);
+                    if (objData.material.textureDataURL) {
+                        const texture = new THREE.TextureLoader().load(objData.material.textureDataURL);
+                        material.map = texture;
+                        material.needsUpdate = true;
+                    }
+
                     const mesh = new THREE.Mesh(geometry, material);
                     mesh.position.fromArray(objData.position);
                     mesh.rotation.fromArray(objData.rotation);
@@ -363,7 +374,28 @@
             loadInput.addEventListener('change', (event) => {
                 const file = event.target.files[0];
                 if (file) { const reader = new FileReader(); reader.onload = (e) => { loadScene(e.target.result); }; reader.readAsText(file); }
-                event.target.value = ''; // Reset file input
+                event.target.value = ''; 
+            });
+            document.getElementById('apply-texture-btn').addEventListener('click', () => {
+                if (selectedItem && selectedItem.isMesh) {
+                    textureInput.click();
+                } else {
+                    alert('Please select a mesh object first.');
+                }
+            });
+            textureInput.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                if (file && selectedItem && selectedItem.isMesh) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const texture = new THREE.TextureLoader().load(e.target.result, () => {
+                            selectedItem.material.needsUpdate = true;
+                        });
+                        selectedItem.material.map = texture;
+                    };
+                    reader.readAsDataURL(file);
+                }
+                event.target.value = '';
             });
         }
 
@@ -385,7 +417,6 @@
                        const clickedLight = lights.find(l => l.helper === lightIntersects[0].object);
                        if (clickedLight && clickedLight !== selectedItem) { selectItem(clickedLight); }
                     } else if (intersects.length === 0 && !transformControls.dragging) {
-                        // Deselect if clicking on empty space
                         selectItem(null);
                     }
                 }
