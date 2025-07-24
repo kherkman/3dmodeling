@@ -101,6 +101,11 @@
                         const material = new THREE.MeshPhysicalMaterial(objData.material);
                         material.color.set(objData.material.color);
                         material.emissive.set(objData.material.emissive);
+                        if (objData.material.textureDataURL) {
+                            const texture = new THREE.TextureLoader().load(objData.material.textureDataURL);
+                            material.map = texture;
+                            material.needsUpdate = true;
+                        }
 
                         const mesh = new THREE.Mesh(geometry, material);
                         mesh.position.fromArray(objData.position);
