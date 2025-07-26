@@ -63,7 +63,7 @@
         </div>
 
         <div id="info-modal" class="modal-overlay">
-            <div class="modal-content"><button id="modal-close-btn" class="modal-close">&times;</button><h2>How to Use</h2><h3>Workflow</h3><p>1. <strong>Load Models:</strong> Use "Load Model(s)" to build a scene.<br>2. <strong>Animate:</strong> Select objects and use the timeline to add keyframes.<br>3. <strong>Save Project:</strong> Saves everything (models and animation) into one file.<br>4. <strong>Load Project:</strong> Use "Load Animation & Models" to open a saved project file.</p><h3>Transforms</h3><ul><li>Press <strong>T</strong> for Translate (Move)</li><li>Press <strong>R</strong> for Rotate</li><li>Press <strong>S</strong> for Scale (Resize)</li></ul></div>
+            <div class="modal-content"><button id="modal-close-btn" class="modal-close">&times;</button><h2>How to Use</h2><h3>Workflow</h3><p>1. <strong>Load Models:</strong> Use "Load Model(s)" to build a scene. This accepts `model.json` files from the Editor.<br>2. <strong>Animate:</strong> Select objects and use the timeline to add keyframes.<br>3. <strong>Save Project:</strong> Saves everything (models and animation) into one file.<br>4. <strong>Load Project:</strong> Use "Load Animation & Models" to open a saved project file.</p><h3>Transforms</h3><ul><li>Press <strong>T</strong> for Translate (Move)</li><li>Press <strong>R</strong> for Rotate</li><li>Press <strong>S</strong> for Scale (Resize)</li></ul></div>
         </div>
 
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -125,7 +125,16 @@
             
             function clearScene() {
                 if (selectedObject) { transformControls.detach(); selectedObject = null; }
-                loadedModels.forEach(model => { scene.remove(model); /* Proper disposal needed for production */ });
+                loadedModels.forEach(model => {
+                     model.traverse(child => {
+                        if (child.isMesh) {
+                            child.geometry.dispose();
+                            if(child.material.map) child.material.map.dispose();
+                            child.material.dispose();
+                        }
+                    });
+                    scene.remove(model);
+                });
                 loadedModels = [];
                 document.getElementById('scene-objects').innerHTML = '';
                 animationData = { duration: 10, tracks: [] };
@@ -138,8 +147,14 @@
                 for(const file of event.target.files) {
                     const reader = new FileReader();
                     reader.onload = (e) => {
-                        const sceneData = JSON.parse(e.target.result);
-                        loadModel(sceneData, file.name);
+                        try {
+                            const sceneData = JSON.parse(e.target.result);
+                             if (!sceneData.objects) { throw new Error("Invalid model file. Missing 'objects' array."); }
+                            loadModel(sceneData, file.name);
+                        } catch(error) {
+                            alert(`Error loading model ${file.name}: ${error.message}`);
+                            console.error(error);
+                        }
                     };
                     reader.readAsText(file);
                 }
@@ -149,17 +164,32 @@
                 const modelGroup = new THREE.Group();
                 modelGroup.name = modelName;
                 modelGroup.userData.sourceData = sceneData; // Store original data for saving
+
+                const bufferLoader = new THREE.BufferGeometryLoader();
+
                 sceneData.objects.forEach(objData => {
-                    let geometry; const dims = objData.scale;
+                    let geometry;
+                    const dims = objData.scale;
+
                     switch (objData.geometryType) {
+                        case 'BufferGeometry':
+                            geometry = bufferLoader.parse(objData.geometryData);
+                            break;
                         case 'BoxGeometry': geometry = new THREE.BoxGeometry(...dims); break;
-                        case 'SphereGeometry': geometry = new THREE.SphereGeometry(dims[0], 32, 32); break;
+                        case 'SphereGeometry': geometry = (objData.name === "Hemisphere") ? new THREE.SphereGeometry(dims[0], 32, 16, 0, Math.PI * 2, 0, Math.PI / 2) : new THREE.SphereGeometry(dims[0], 32, 32); break;
                         case 'CylinderGeometry': geometry = new THREE.CylinderGeometry(dims[0], dims[1], dims[2], 32); break;
+                        case 'ConeGeometry': geometry = new THREE.ConeGeometry(dims[0], dims[1], 32); break;
+                        case 'PlaneGeometry': geometry = new THREE.PlaneGeometry(dims[0], dims[1]); break;
+                        case 'TetrahedronGeometry': geometry = new THREE.TetrahedronGeometry(dims[0]); break;
                         default: geometry = new THREE.BoxGeometry(1, 1, 1);
                     }
                     const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(objData.material.color) });
-                    if (objData.material.textureDataURL) {
+                     if (objData.material.textureDataURL) {
                         const texture = new THREE.TextureLoader().load(objData.material.textureDataURL);
+                         if (objData.material.textureRotation) {
+                            texture.center.set(0.5, 0.5);
+                            texture.rotation = objData.material.textureRotation;
+                        }
                         material.map = texture;
                         material.needsUpdate = true;
                     }
@@ -167,6 +197,11 @@
                     const mesh = new THREE.Mesh(geometry, material);
                     mesh.position.fromArray(objData.position);
                     mesh.rotation.fromArray(objData.rotation);
+
+                    if (objData.geometryType === 'BufferGeometry') {
+                        mesh.scale.fromArray(objData.scale);
+                    }
+
                     modelGroup.add(mesh);
                 });
                 scene.add(modelGroup);
@@ -232,6 +267,7 @@
                 document.getElementById('play-pause-btn').textContent = isPlaying ? "Pause" : "Play";
                 if(isPlaying) {
                     animationTime = parseFloat(document.getElementById('timeline').value);
+                    if (animationTime >= animationData.duration) { animationTime = 0; }
                     clock.getDelta();
                 }
             }
@@ -256,9 +292,25 @@
             function applyAnimation(time) {
                 animationData.tracks.forEach(track => {
                     const object = loadedModels.find(m => m.uuid === track.uuid);
-                    if (!object || track.keyframes.length < 2) return;
+                    if (!object || track.keyframes.length === 0) return;
+                    
+                    if (track.keyframes.length < 2) {
+                        const kf = track.keyframes[0];
+                        object.position.fromArray(kf.position);
+                        object.quaternion.fromArray(kf.rotation);
+                        object.scale.fromArray(kf.scale);
+                        return;
+                    }
+
                     let kf1 = track.keyframes.find(kf => kf.time >= time) || track.keyframes[track.keyframes.length - 1];
                     let kf0 = track.keyframes.slice().reverse().find(kf => kf.time <= time) || track.keyframes[0];
+                    
+                    if (time > track.keyframes[track.keyframes.length - 1].time) {
+                        Object.assign(kf0, track.keyframes[track.keyframes.length - 1]);
+                        Object.assign(kf1, kf0);
+                    }
+
+
                     if (kf0 === kf1) {
                         object.position.fromArray(kf0.position); object.quaternion.fromArray(kf0.rotation); object.scale.fromArray(kf0.scale);
                     } else {
@@ -272,13 +324,13 @@
             }
 
             function saveAnimation() {
-                if (animationData.tracks.length === 0) { alert("Nothing to save. Add keyframes first."); return; }
+                if (loadedModels.length === 0) { alert("Nothing to save. Add models first."); return; }
                 const animatedModelUUIDs = new Set(animationData.tracks.map(t => t.uuid));
-                const modelsToSave = loadedModels.filter(model => animatedModelUUIDs.has(model.uuid)).map(model => ({ name: model.name, data: model.userData.sourceData }));
+                const modelsToSave = loadedModels.map(model => ({ name: model.name, data: model.userData.sourceData }));
                 const dataToSave = { duration: animationData.duration, tracks: animationData.tracks, models: modelsToSave };
                 const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dataToSave, null, 2));
                 const dl = document.createElement('a');
-                dl.setAttribute("href", dataStr); dl.setAttribute("download", "project.json");
+                dl.setAttribute("href", dataStr); dl.setAttribute("download", "animation-project.json");
                 document.body.appendChild(dl); dl.click(); dl.remove();
             }
 
@@ -298,6 +350,7 @@
                         document.getElementById('timeline').max = data.duration;
                         animationTime = 0; document.getElementById('timeline').value = 0;
                         onTimelineScrub();
+                        applyAnimation(0);
                     } catch (error) { alert(`Failed to load project: ${error.message}`); console.error(error); }
                 };
                 reader.readAsText(file);
