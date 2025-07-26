@@ -54,12 +54,15 @@
                 <button id="add-plane-btn">Plane</button>
                 <button id="add-hemisphere-btn">Hemisphere</button>
                 <button id="add-tetrahedron-btn">Tetrahedron</button>
+                <button id="add-text-btn" style="background-color: #d4edda;">Add Text</button>
+                <input type="file" id="font-input" accept=".ttf,.json" style="display: none;">
+                <button id="load-font-btn">Load Font</button>
             </div>
 
             <div class="control-section">
                 <h3>Scene Contents</h3>
                 <select id="object-list" size="8"></select>
-                <input type="file" id="texture-input" accept=".jpg, .jpeg" style="display: none;">
+                <input type="file" id="texture-input" accept=".jpg, .jpeg, .png" style="display: none;">
                 <button id="apply-texture-btn">Apply Texture</button>
                 <button id="remove-btn">Remove Selected Object</button>
             </div>
@@ -86,12 +89,19 @@
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { TransformControls } from 'three/addons/controls/TransformControls.js';
+        import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+        import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+
 
         let camera, scene, renderer, orbitControls, transformControls;
         let selectedItem = null;
         let objects = [];
         let lights = [];
         const axesHelper = new THREE.AxesHelper(5);
+        
+        const fontLoader = new FontLoader();
+        let fonts = {};
+        const defaultFontName = 'helvetiker_regular';
 
         const sceneContainer = document.getElementById('scene-container');
         const objectList = document.getElementById('object-list');
@@ -127,7 +137,14 @@
             });
             scene.add(transformControls);
             scene.add(axesHelper);
-            addCube();
+            
+            // Load default font
+            const fontURL = 'https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_regular.typeface.json';
+            fontLoader.load(fontURL, (font) => {
+                fonts[defaultFontName] = { font: font, url: fontURL };
+                addText(); // Add initial text once font is loaded
+            });
+
             addDirectionalLight();
             setupUI();
             setupEventListeners();
@@ -180,19 +197,50 @@
         
         function createDefaultMaterial(color) { return new THREE.MeshPhysicalMaterial({ color: color, metalness: 0.0, roughness: 0.5 }); }
         function addCube() { addObjectToScene(new THREE.Mesh(new THREE.BoxGeometry(4, 4, 4), createDefaultMaterial(0x00ff00)), "Cube"); }
+
+        function addText() {
+            if (!fonts[defaultFontName]) { alert("Default font not loaded yet."); return; }
+            const textGeo = new TextGeometry('Text', {
+                font: fonts[defaultFontName].font,
+                size: 2, height: 0.2, curveSegments: 12,
+                bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.02, bevelSegments: 5
+            });
+            textGeo.center();
+            const textMesh = new THREE.Mesh(textGeo, createDefaultMaterial(0xcccccc));
+            textMesh.userData = {
+                isText: true, text: 'Text', fontName: defaultFontName,
+                size: 2, height: 0.2,
+                bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.02
+            };
+            addObjectToScene(textMesh, "Text");
+        }
+
+        function regenerateTextGeometry(mesh) {
+            const data = mesh.userData;
+            if (!fonts[data.fontName]) return;
+            mesh.geometry.dispose(); // Dispose old geometry
+            const newGeo = new TextGeometry(data.text, {
+                font: fonts[data.fontName].font, size: data.size, height: data.height, curveSegments: 12,
+                bevelEnabled: data.bevelEnabled, bevelThickness: data.bevelThickness, bevelSize: data.bevelSize, bevelSegments: 5
+            });
+            newGeo.center();
+            mesh.geometry = newGeo;
+        }
+
         function addObjectToScene(object, name) { object.name = name; scene.add(object); objects.push(object); selectItem(object); }
         function updateObjectList() {
             objectList.innerHTML = '';
             objects.forEach((obj, index) => { const option = document.createElement('option'); option.value = index; option.textContent = `${obj.name} ${index + 1}`; if (obj === selectedItem) option.selected = true; objectList.appendChild(option); });
         }
         function removeSelectedObject() {
-            if (selectedItem && selectedItem.isMesh) { scene.remove(selectedItem); objects.splice(objects.indexOf(selectedItem), 1); selectItem(null); }
+            if (selectedItem && selectedItem.isMesh) { selectedItem.geometry.dispose(); if(selectedItem.material.map) selectedItem.material.map.dispose(); selectedItem.material.dispose(); scene.remove(selectedItem); objects.splice(objects.indexOf(selectedItem), 1); selectItem(null); }
         }
 
         function updatePropertiesPanel() {
             if (!selectedItem) { propertiesPanelContainer.style.display = 'none'; return; }
             propertiesPanelContainer.style.display = 'block';
             propsContainer.innerHTML = '';
+
             if (selectedItem.isLight) {
                 propertiesTitle.textContent = 'Light Properties';
                 const light = selectedItem;
@@ -202,6 +250,27 @@
             } else if (selectedItem.isMesh) {
                 propertiesTitle.textContent = 'Object Properties';
                 const mat = selectedItem.material;
+
+                if (selectedItem.userData.isText) {
+                    const textFolder = createFolder('Text Settings', propsContainer);
+                    textFolder.appendChild(createTextInput('Content', selectedItem.userData.text, (val) => {
+                        selectedItem.userData.text = val;
+                        regenerateTextGeometry(selectedItem);
+                    }));
+                    textFolder.appendChild(createSelect('Font', Object.keys(fonts), selectedItem.userData.fontName, (val) => {
+                         selectedItem.userData.fontName = val;
+                         regenerateTextGeometry(selectedItem);
+                    }));
+                    textFolder.appendChild(createSlider('Size', 0.1, 10, 0.1, selectedItem.userData.size, (val) => {
+                         selectedItem.userData.size = val;
+                         regenerateTextGeometry(selectedItem);
+                    }));
+                     textFolder.appendChild(createSlider('Depth', 0.01, 2, 0.01, selectedItem.userData.height, (val) => {
+                         selectedItem.userData.height = val;
+                         regenerateTextGeometry(selectedItem);
+                    }));
+                }
+
                 const transFolder = createFolder('Transformations', propsContainer);
                 let baseScaleForLock = null;
                 const lockButton = document.createElement('button');
@@ -226,6 +295,12 @@
                     };
                     item.appendChild(label); item.appendChild(input); transFolder.appendChild(item); scaleInputs[dim] = input;
                 });
+                
+                if (mat.map) {
+                    const texFolder = createFolder('Texture Transform', propsContainer);
+                    texFolder.appendChild(createSlider('Rotation', 0, Math.PI * 2, 0.01, mat.map.rotation, (val) => { mat.map.rotation = val; }));
+                }
+
                 const coreFolder = createFolder('Core Material', propsContainer);
                 coreFolder.appendChild(createColorPicker('Color', mat.color, (val) => mat.color.set(val)));
                 coreFolder.appendChild(createSlider('Roughness', 0, 1, 0.01, mat.roughness, (val) => mat.roughness = val));
@@ -254,6 +329,8 @@
         function createSlider(label, min, max, step, value, callback) { const container = document.createElement('div'); container.className = 'prop-item'; const labelEl = document.createElement('label'); labelEl.textContent = label; const slider = document.createElement('input'); slider.type = 'range'; slider.min = min; slider.max = max; slider.step = step; slider.value = value; slider.oninput = () => callback(parseFloat(slider.value)); container.appendChild(labelEl); container.appendChild(slider); return container; }
         function createColorPicker(label, value, callback) { const container = document.createElement('div'); container.className = 'prop-item'; const labelEl = document.createElement('label'); labelEl.textContent = label; const picker = document.createElement('input'); picker.type = 'color'; picker.value = '#' + value.getHexString(); picker.oninput = () => callback(picker.value); container.appendChild(labelEl); container.appendChild(picker); return container; }
         function createCheckbox(label, checked, callback) { const container = document.createElement('div'); container.className = 'prop-item'; const labelEl = document.createElement('label'); labelEl.textContent = label; const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = checked; checkbox.onchange = () => callback(checkbox.checked); container.appendChild(labelEl); container.appendChild(checkbox); return container; }
+        function createTextInput(label, value, callback) { const container = document.createElement('div'); container.className = 'prop-item'; const labelEl = document.createElement('label'); labelEl.textContent = label; const input = document.createElement('input'); input.type = 'text'; input.value = value; input.onchange = () => callback(input.value); container.appendChild(labelEl); container.appendChild(input); return container; }
+        function createSelect(label, options, value, callback) { const container = document.createElement('div'); container.className = 'prop-item'; const labelEl = document.createElement('label'); labelEl.textContent = label; const select = document.createElement('select'); options.forEach(opt => { const option = document.createElement('option'); option.value = opt; option.textContent = opt; if (opt === value) option.selected = true; select.appendChild(option); }); select.onchange = () => callback(select.value); container.appendChild(labelEl); container.appendChild(select); return container; }
         
         function getMaterialData(material) { 
             const data = {
@@ -264,6 +341,7 @@
              };
              if (material.map && material.map.image) {
                 data.textureDataURL = material.map.image.src;
+                data.textureRotation = material.map.rotation;
             }
             return data;
         }
@@ -273,30 +351,54 @@
 
         function saveScene() {
             const sceneData = { objects: [], lights: [], camera: { position: camera.position.toArray(), rotation: camera.rotation.toArray() } };
-            objects.forEach(obj => { sceneData.objects.push({ name: obj.name, position: obj.position.toArray(), rotation: obj.rotation.toArray(), scale: obj.scale.toArray(), geometryType: obj.geometry.type, material: getMaterialData(obj.material) }); });
+            objects.forEach(obj => {
+                const objectData = {
+                    name: obj.name, position: obj.position.toArray(), rotation: obj.rotation.toArray(), scale: obj.scale.toArray(),
+                    geometryType: obj.geometry.type, material: getMaterialData(obj.material)
+                };
+                if(obj.userData.isText) {
+                    objectData.userData = obj.userData;
+                    objectData.userData.fontURL = fonts[obj.userData.fontName]?.url;
+                }
+                sceneData.objects.push(objectData);
+            });
             lights.forEach(light => sceneData.lights.push(getLightData(light)));
             downloadJSON(sceneData, 'scene.json');
         }
+        
         function saveModelForViewer() {
             const sceneData = { objects: [], lights: [], camera: { position: camera.position.toArray(), rotation: camera.rotation.toArray() } };
             objects.forEach(obj => {
-                const params = obj.geometry.parameters; let finalDimensions;
-                switch (obj.geometry.type) {
-                    case 'BoxGeometry': finalDimensions = [params.width * obj.scale.x, params.height * obj.scale.y, params.depth * obj.scale.z]; break;
-                    case 'SphereGeometry': finalDimensions = [params.radius * obj.scale.x]; break;
-                    case 'CylinderGeometry': finalDimensions = [params.radiusTop * obj.scale.x, params.radiusBottom * obj.scale.x, params.height * obj.scale.y]; break;
-                    case 'ConeGeometry': finalDimensions = [params.radius * obj.scale.x, params.height * obj.scale.y]; break;
-                    case 'PlaneGeometry': finalDimensions = [params.width * obj.scale.x, params.height * obj.scale.y]; break;
-                    case 'TetrahedronGeometry': finalDimensions = [params.radius * obj.scale.x]; break;
-                    default: finalDimensions = obj.scale.toArray();
+                let objectData = { name: obj.name, position: obj.position.toArray(), rotation: obj.rotation.toArray(), material: getMaterialData(obj.material) };
+
+                if (obj.userData.isText) {
+                    // For viewer, save text as generic buffer geometry
+                    objectData.geometryType = 'BufferGeometry';
+                    objectData.geometryData = obj.geometry.toJSON();
+                    objectData.scale = obj.scale.toArray(); // Apply scale directly for buffer geometry
+                } else {
+                    // For primitives, bake the scale into dimensions
+                    const params = obj.geometry.parameters;
+                    let finalDimensions;
+                    switch (obj.geometry.type) {
+                        case 'BoxGeometry': finalDimensions = [params.width * obj.scale.x, params.height * obj.scale.y, params.depth * obj.scale.z]; break;
+                        case 'SphereGeometry': finalDimensions = [params.radius * obj.scale.x]; break;
+                        case 'CylinderGeometry': finalDimensions = [params.radiusTop * obj.scale.x, params.radiusBottom * obj.scale.x, params.height * obj.scale.y]; break;
+                        case 'ConeGeometry': finalDimensions = [params.radius * obj.scale.x, params.height * obj.scale.y]; break;
+                        case 'PlaneGeometry': finalDimensions = [params.width * obj.scale.x, params.height * obj.scale.y]; break;
+                        case 'TetrahedronGeometry': finalDimensions = [params.radius * obj.scale.x]; break;
+                        default: finalDimensions = obj.scale.toArray();
+                    }
+                    objectData.geometryType = obj.geometry.type;
+                    objectData.scale = finalDimensions; // In viewer, scale is used as dimension args
                 }
-                sceneData.objects.push({ name: obj.name, position: obj.position.toArray(), rotation: obj.rotation.toArray(), scale: finalDimensions, geometryType: obj.geometry.type, material: getMaterialData(obj.material) });
+                sceneData.objects.push(objectData);
             });
             lights.forEach(light => sceneData.lights.push(getLightData(light)));
             downloadJSON(sceneData, 'model.json');
         }
 
-        function loadScene(data) {
+        async function loadScene(data) {
             while (objects.length > 0) { selectItem(objects[0]); removeSelectedObject(); }
             while (lights.length > 0) { selectItem(lights[0]); removeSelectedLight(); }
             const sceneData = JSON.parse(data);
@@ -306,45 +408,56 @@
             if (sceneData.lights) {
                 sceneData.lights.forEach(lightData => {
                     let light;
-                    switch (lightData.type) {
-                        case 'DirectionalLight': light = new THREE.DirectionalLight(); break;
-                        case 'PointLight': light = new THREE.PointLight(); break;
-                        case 'SpotLight': light = new THREE.SpotLight(); break;
-                        default: light = new THREE.PointLight();
-                    }
-                    light.position.fromArray(lightData.position);
-                    light.color.set(lightData.color);
-                    light.intensity = lightData.intensity;
+                    switch (lightData.type) { case 'DirectionalLight': light = new THREE.DirectionalLight(); break; case 'PointLight': light = new THREE.PointLight(); break; case 'SpotLight': light = new THREE.SpotLight(); break; default: light = new THREE.PointLight(); }
+                    light.position.fromArray(lightData.position); light.color.set(lightData.color); light.intensity = lightData.intensity;
                     addLightToScene(light, lightData.name || lightData.type);
                 });
             }
             if(sceneData.objects) {
-                sceneData.objects.forEach(objData => {
-                    let geometry;
-                    switch (objData.geometryType) {
-                        case 'BoxGeometry': geometry = new THREE.BoxGeometry(4, 4, 4); break;
-                        case 'SphereGeometry': geometry = (objData.name === "Hemisphere") ? new THREE.SphereGeometry(2, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2) : new THREE.SphereGeometry(2, 32, 32); break;
-                        case 'CylinderGeometry': geometry = new THREE.CylinderGeometry(2, 2, 4, 32); break;
-                        case 'ConeGeometry': geometry = new THREE.ConeGeometry(2, 4, 32); break;
-                        case 'PlaneGeometry': geometry = new THREE.PlaneGeometry(5, 5); break;
-                        case 'TetrahedronGeometry': geometry = new THREE.TetrahedronGeometry(3); break;
-                        default: geometry = new THREE.BoxGeometry(4, 4, 4);
-                    }
+                for (const objData of sceneData.objects) {
+                    let mesh;
                     const material = new THREE.MeshPhysicalMaterial(objData.material);
-                    material.color.set(objData.material.color); 
-                    material.emissive.set(objData.material.emissive);
+                    material.color.set(objData.material.color); material.emissive.set(objData.material.emissive);
+
                     if (objData.material.textureDataURL) {
-                        const texture = new THREE.TextureLoader().load(objData.material.textureDataURL);
+                        const texture = await new THREE.TextureLoader().loadAsync(objData.material.textureDataURL);
+                        texture.center.set(0.5, 0.5);
+                        texture.rotation = objData.material.textureRotation || 0;
                         material.map = texture;
                         material.needsUpdate = true;
                     }
 
-                    const mesh = new THREE.Mesh(geometry, material);
-                    mesh.position.fromArray(objData.position);
-                    mesh.rotation.fromArray(objData.rotation);
-                    mesh.scale.fromArray(objData.scale);
+                    if (objData.userData?.isText) {
+                        const { fontName, fontURL } = objData.userData;
+                        if (fontURL && !fonts[fontName]) {
+                            try {
+                                const font = await fontLoader.loadAsync(fontURL);
+                                fonts[fontName] = { font: font, url: fontURL };
+                            } catch (e) { console.error(`Could not load font ${fontName}`, e); continue; }
+                        }
+                         const textGeo = new TextGeometry(objData.userData.text, {
+                            font: fonts[fontName].font, size: objData.userData.size, height: objData.userData.height, curveSegments: 12,
+                            bevelEnabled: objData.userData.bevelEnabled, bevelThickness: objData.userData.bevelThickness, bevelSize: objData.userData.bevelSize, bevelSegments: 5
+                        });
+                        textGeo.center();
+                        mesh = new THREE.Mesh(textGeo, material);
+                        mesh.userData = objData.userData;
+                    } else {
+                        let geometry;
+                        switch (objData.geometryType) {
+                            case 'BoxGeometry': geometry = new THREE.BoxGeometry(4, 4, 4); break;
+                            case 'SphereGeometry': geometry = (objData.name === "Hemisphere") ? new THREE.SphereGeometry(2, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2) : new THREE.SphereGeometry(2, 32, 32); break;
+                            case 'CylinderGeometry': geometry = new THREE.CylinderGeometry(2, 2, 4, 32); break;
+                            case 'ConeGeometry': geometry = new THREE.ConeGeometry(2, 4, 32); break;
+                            case 'PlaneGeometry': geometry = new THREE.PlaneGeometry(5, 5); break;
+                            case 'TetrahedronGeometry': geometry = new THREE.TetrahedronGeometry(3); break;
+                            default: geometry = new THREE.BoxGeometry(4, 4, 4);
+                        }
+                        mesh = new THREE.Mesh(geometry, material);
+                    }
+                    mesh.position.fromArray(objData.position); mesh.rotation.fromArray(objData.rotation); mesh.scale.fromArray(objData.scale);
                     addObjectToScene(mesh, objData.name);
-                });
+                }
             }
             selectItem(null);
         }
@@ -363,6 +476,24 @@
             document.getElementById('add-plane-btn').addEventListener('click', () => addObjectToScene(new THREE.Mesh(new THREE.PlaneGeometry(5, 5), createDefaultMaterial(0xffffff)), "Plane"));
             document.getElementById('add-hemisphere-btn').addEventListener('click', () => addObjectToScene(new THREE.Mesh(new THREE.SphereGeometry(2, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), createDefaultMaterial(0xff00ff)), "Hemisphere"));
             document.getElementById('add-tetrahedron-btn').addEventListener('click', () => addObjectToScene(new THREE.Mesh(new THREE.TetrahedronGeometry(3), createDefaultMaterial(0x00ffff)), "Tetrahedron"));
+            document.getElementById('add-text-btn').addEventListener('click', addText);
+            document.getElementById('load-font-btn').addEventListener('click', () => document.getElementById('font-input').click());
+            document.getElementById('font-input').addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const fontName = file.name.split('.')[0];
+                    const fontURL = e.target.result;
+                    fontLoader.load(fontURL, (font) => {
+                        fonts[fontName] = { font: font, url: fontURL };
+                        updatePropertiesPanel(); // refresh dropdown if text selected
+                    }, undefined, (err) => { console.error('Font load error:', err); alert('Failed to load font.'); });
+                };
+                reader.readAsDataURL(file);
+                event.target.value = '';
+            });
+
             document.getElementById('remove-btn').addEventListener('click', removeSelectedObject);
             objectList.addEventListener('change', (event) => { selectItem(objects[event.target.value]); });
             document.getElementById('translate-btn').addEventListener('click', () => transformControls.setMode('translate'));
@@ -390,7 +521,9 @@
                     reader.onload = (e) => {
                         const texture = new THREE.TextureLoader().load(e.target.result, () => {
                             selectedItem.material.needsUpdate = true;
+                            updatePropertiesPanel(); // Redraw panel to show rotation slider
                         });
+                        texture.center.set(0.5, 0.5); // Set rotation center
                         selectedItem.material.map = texture;
                     };
                     reader.readAsDataURL(file);
