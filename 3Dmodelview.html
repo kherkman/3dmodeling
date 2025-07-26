@@ -61,7 +61,12 @@
 
             // 3. Model Loading Function
             function loadModel(sceneData) {
-                currentObjects.forEach(obj => scene.remove(obj));
+                currentObjects.forEach(obj => {
+                    obj.geometry.dispose();
+                    if(obj.material.map) obj.material.map.dispose();
+                    obj.material.dispose();
+                    scene.remove(obj)
+                });
                 currentObjects = [];
                 currentLights.forEach(light => scene.remove(light));
                 currentLights = [];
@@ -84,11 +89,16 @@
                 }
 
                 if (sceneData.objects) {
+                    const bufferLoader = new THREE.BufferGeometryLoader();
+
                     sceneData.objects.forEach(objData => {
                         let geometry;
                         const dims = objData.scale;
 
                         switch (objData.geometryType) {
+                            case 'BufferGeometry':
+                                geometry = bufferLoader.parse(objData.geometryData);
+                                break;
                             case 'BoxGeometry': geometry = new THREE.BoxGeometry(...dims); break;
                             case 'SphereGeometry': geometry = (objData.name === "Hemisphere") ? new THREE.SphereGeometry(dims[0], 32, 16, 0, Math.PI * 2, 0, Math.PI / 2) : new THREE.SphereGeometry(dims[0], 32, 32); break;
                             case 'CylinderGeometry': geometry = new THREE.CylinderGeometry(dims[0], dims[1], dims[2], 32); break;
@@ -103,6 +113,10 @@
                         material.emissive.set(objData.material.emissive);
                         if (objData.material.textureDataURL) {
                             const texture = new THREE.TextureLoader().load(objData.material.textureDataURL);
+                            if (objData.material.textureRotation) {
+                                texture.center.set(0.5, 0.5);
+                                texture.rotation = objData.material.textureRotation;
+                            }
                             material.map = texture;
                             material.needsUpdate = true;
                         }
@@ -110,6 +124,11 @@
                         const mesh = new THREE.Mesh(geometry, material);
                         mesh.position.fromArray(objData.position);
                         mesh.rotation.fromArray(objData.rotation);
+
+                        // If geometry was loaded from buffer, it has its own scale property
+                        if (objData.geometryType === 'BufferGeometry') {
+                            mesh.scale.fromArray(objData.scale);
+                        }
                         
                         scene.add(mesh);
                         currentObjects.push(mesh);
